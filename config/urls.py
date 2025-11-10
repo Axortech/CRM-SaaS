@@ -16,8 +16,39 @@ Including another URLconf
 """
 
 from django.contrib import admin
-from django.urls import path
+from django.urls import include, path
+
+from drf_spectacular.views import (
+    SpectacularAPIView,
+    SpectacularRedocView,
+    SpectacularSwaggerView,
+)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path(
+        "api/docs",
+        SpectacularSwaggerView.as_view(url_name="schema"),
+        name="swagger-ui",
+    ),
+    path(
+        "api/redoc",
+        SpectacularRedocView.as_view(url_name="schema"),
+        name="redoc",
+    ),
+    path("api/v1/auth/", include("apps.accounts.urls")),
+    path("api/v1/", include("apps.organizations.urls")),
+    path("api/v1/", include("apps.subscriptions.urls")),
+    path("api/v1/", include("apps.contacts.urls")),
+    path("api/v1/", include("apps.companies.urls")),
+    path("api/v1/", include("apps.opportunities.urls")),
+    path("api/v1/", include("apps.tasks.urls")),
+    path("api/v1/", include("apps.activities.urls")),
+    path("api/v1/", include("apps.emails.urls")),
+    path("api/v1/", include("apps.reports.urls")),
+    path("api/v1/", include("apps.customization.urls")),
+    path("api/v1/", include("apps.integrations.urls")),
+    path("api/v1/", include("apps.notifications.urls")),
+    path("api/v1/", include("apps.dashboard.urls")),
 ]

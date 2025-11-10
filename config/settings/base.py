@@ -1,6 +1,11 @@
 import os
 from datetime import timedelta
-from dotenv import load_dotenv
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(path):
+        return False
 # import environ
 
 # -----------------------------------------------------------------------------
@@ -34,6 +39,8 @@ DJANGO_APPS = [
 
 THIRD_PARTY_APPS = [
     "rest_framework",
+    "drf_spectacular",
+    "django_filters",
     "corsheaders",
     "django_prometheus",
     "guardian",
@@ -54,6 +61,7 @@ LOCAL_APPS = [
     "apps.customization",
     "apps.integrations",
     "apps.notifications",
+    "apps.dashboard",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -115,7 +123,7 @@ DATABASES = {
 # -----------------------------------------------------------------------------
 # AUTHENTICATION
 # -----------------------------------------------------------------------------
-# AUTH_USER_MODEL = "accounts.User"
+AUTH_USER_MODEL = "accounts.User"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
@@ -124,8 +132,24 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
     ),
-    # "DEFAULT_PAGINATION_CLASS": "core.pagination.custom_pagination.StandardResultsSetPagination",
+    "DEFAULT_FILTER_BACKENDS": (
+        "core.filters.AdvancedQueryFilterBackend",
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
+    ),
+    "DEFAULT_RENDERER_CLASSES": ("core.renderers.StandardJSONRenderer",),
+    "DEFAULT_PAGINATION_CLASS": "core.pagination.StandardResultsSetPagination",
+    "DEFAULT_SCHEMA_CLASS": "core.schema.TaggedAutoSchema",
     "PAGE_SIZE": 20,
+    "EXCEPTION_HANDLER": "core.exceptions.custom_exception_handler",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "CRM SaaS API",
+    "DESCRIPTION": "Interactive documentation for the CRM SaaS platform.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
 }
 
 SIMPLE_JWT = {
