@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Optional
 
 from django.db import transaction
 from django.db.models import Q
@@ -9,27 +9,8 @@ from django.utils.text import slugify
 from apps.organizations.models import Organization, OrganizationMember, Role
 
 DEFAULT_ROLE_DEFINITIONS: List[Dict] = [
-    {"name": "Owner", "is_system_role": True, "permissions": ["*"]},
-    {
-        "name": "Admin",
-        "is_system_role": True,
-        "permissions": ["users.manage", "settings.manage", "data.full_access"],
-    },
-    {
-        "name": "Manager",
-        "is_system_role": True,
-        "permissions": ["team.manage", "reports.view", "data.team_access"],
-    },
-    {
-        "name": "Sales Rep",
-        "is_system_role": True,
-        "permissions": ["contacts.manage", "opportunities.manage", "tasks.manage"],
-    },
-    {
-        "name": "User",
-        "is_system_role": True,
-        "permissions": ["contacts.view_assigned", "tasks.view_assigned"],
-    },
+    {"name": "Admin", "is_system_role": True, "permissions": ["*"]},
+    {"name": "Staff", "is_system_role": True, "permissions": []},
 ]
 
 
@@ -44,7 +25,13 @@ def _generate_unique_slug(base_value: str) -> str:
 
 
 @transaction.atomic
-def create_organization_with_owner(*, owner, name: str, timezone: str = "UTC") -> Organization:
+def create_organization_with_owner(
+    *,
+    owner,
+    name: str,
+    timezone: str = "UTC",
+    admin_user: Optional = None,
+) -> Organization:
     slug = _generate_unique_slug(name)
     organization = Organization.objects.create(
         name=name,
@@ -53,14 +40,15 @@ def create_organization_with_owner(*, owner, name: str, timezone: str = "UTC") -
         timezone=timezone,
     )
     ensure_default_roles(organization)
-    owner_role = Role.objects.get(organization=organization, name="Owner")
-    OrganizationMember.objects.create(
-        organization=organization,
-        user=owner,
-        role=owner_role,
-        is_active=True,
-        invitation_accepted=True,
-    )
+    if admin_user:
+        admin_role = Role.objects.get(organization=organization, name="Admin")
+        OrganizationMember.objects.create(
+            organization=organization,
+            user=admin_user,
+            role=admin_role,
+            is_active=True,
+            invitation_accepted=True,
+        )
     return organization
 
 
@@ -86,7 +74,7 @@ def user_is_org_admin(user, organization: Organization) -> bool:
         organization=organization,
         user=user,
         is_active=True,
-        role__name__in=["Owner", "Admin"],
+        role__name__in=["Admin"],
     ).exists()
 
 

@@ -1,9 +1,9 @@
 from django.apps import apps
 from django.contrib import admin
 
-admin.site.site_title = "a2z"
-admin.site.site_header = "a2z"
-admin.site.index_title = "a2z"
+admin.site.site_title = "CRM Axor"
+admin.site.site_header = "CRM Axor"
+admin.site.index_title = "CRM Axor Administration"
 
 
 def register_all_app_models():

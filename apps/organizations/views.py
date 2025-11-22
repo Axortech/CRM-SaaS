@@ -3,11 +3,13 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema
 
 from apps.organizations import services as org_services
 from apps.organizations.models import Organization, OrganizationMember, Role
 from apps.organizations.serializers import (
     OrganizationCreateSerializer,
+    OrganizationMemberCreateSerializer,
     OrganizationMemberSerializer,
     OrganizationMemberUpdateSerializer,
     OrganizationSerializer,
@@ -33,9 +35,19 @@ class OrganizationViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == "create":
             return OrganizationCreateSerializer
-        return OrganizationSerializer
+        action_serializer_map = {
+            "members": OrganizationMemberCreateSerializer,
+            "member_detail": OrganizationMemberUpdateSerializer,
+            "update_member_role": OrganizationMemberUpdateSerializer,
+            "roles": RoleSerializer,
+            "role_detail": RoleSerializer,
+            "organization_settings": OrganizationSettingsSerializer,
+        }
+        return action_serializer_map.get(self.action, OrganizationSerializer)
 
     def create(self, request, *args, **kwargs):
+        if not request.user.is_superuser:
+            raise PermissionDenied("Only superadmins can create organizations.")
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         organization = serializer.save()
@@ -66,7 +78,23 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         except OrganizationMember.DoesNotExist as exc:
             raise NotFound("Member not found.") from exc
 
-    @action(detail=True, methods=["get", "post"], url_path="members")
+    @action(
+        detail=True,
+        methods=["get", "post"],
+        url_path="members",
+        serializer_class=OrganizationMemberSerializer,
+    )
+    @extend_schema(
+        request=OrganizationMemberCreateSerializer,
+        responses=OrganizationMemberSerializer,
+        tags=["Organizations"],
+        methods=["POST"],
+    )
+    @extend_schema(
+        responses=OrganizationMemberSerializer(many=True),
+        tags=["Organizations"],
+        methods=["GET"],
+    )
     def members(self, request, pk=None):
         organization = self.get_object()
         if request.method == "GET":
@@ -75,7 +103,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             return Response(serializer.data)
 
         self._ensure_admin(organization, request.user)
-        serializer = OrganizationMemberSerializer(
+        serializer = self.get_serializer(
             data=request.data,
             context={"organization": organization},
         )
@@ -84,7 +112,23 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         output_serializer = OrganizationMemberSerializer(member)
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=["patch", "delete"], url_path="members/(?P<user_id>[^/.]+)")
+    @action(
+        detail=True,
+        methods=["patch", "delete"],
+        url_path="members/(?P<user_id>[^/.]+)",
+        serializer_class=OrganizationMemberUpdateSerializer,
+    )
+    @extend_schema(
+        request=OrganizationMemberUpdateSerializer,
+        responses=OrganizationMemberSerializer,
+        tags=["Organizations"],
+        methods=["PATCH"],
+    )
+    @extend_schema(
+        responses=None,
+        tags=["Organizations"],
+        methods=["DELETE"],
+    )
     def member_detail(self, request, pk=None, user_id=None):
         organization = self.get_object()
         self._ensure_admin(organization, request.user)
@@ -107,7 +151,17 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         serializer.save()
         return Response(OrganizationMemberSerializer(member).data)
 
-    @action(detail=True, methods=["patch"], url_path="members/(?P<user_id>[^/.]+)/role")
+    @action(
+        detail=True,
+        methods=["patch"],
+        url_path="members/(?P<user_id>[^/.]+)/role",
+        serializer_class=OrganizationMemberUpdateSerializer,
+    )
+    @extend_schema(
+        request=OrganizationMemberUpdateSerializer,
+        responses=OrganizationMemberSerializer,
+        tags=["Organizations"],
+    )
     def update_member_role(self, request, pk=None, user_id=None):
         organization = self.get_object()
         self._ensure_admin(organization, request.user)
@@ -123,6 +177,17 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         return Response(OrganizationMemberSerializer(member).data)
 
     @action(detail=True, methods=["get", "post"], url_path="roles")
+    @extend_schema(
+        request=RoleSerializer,
+        responses=RoleSerializer,
+        tags=["Organizations"],
+        methods=["POST"],
+    )
+    @extend_schema(
+        responses=RoleSerializer(many=True),
+        tags=["Organizations"],
+        methods=["GET"],
+    )
     def roles(self, request, pk=None):
         organization = self.get_object()
         self._ensure_admin(organization, request.user)
@@ -141,6 +206,17 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         return Response(RoleSerializer(role).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["patch", "delete"], url_path="roles/(?P<role_id>[^/.]+)")
+    @extend_schema(
+        request=RoleSerializer,
+        responses=RoleSerializer,
+        tags=["Organizations"],
+        methods=["PATCH"],
+    )
+    @extend_schema(
+        responses=None,
+        tags=["Organizations"],
+        methods=["DELETE"],
+    )
     def role_detail(self, request, pk=None, role_id=None):
         organization = self.get_object()
         self._ensure_admin(organization, request.user)
@@ -169,8 +245,8 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         serializer.save()
         return Response(RoleSerializer(role).data)
 
-    @action(detail=True, methods=["get", "patch"], url_path="settings")
-    def settings(self, request, pk=None):
+    @action(detail=True, methods=["get", "patch"], url_path="settings", url_name="settings")
+    def organization_settings(self, request, pk=None):
         organization = self.get_object()
         if request.method == "GET":
             serializer = OrganizationSettingsSerializer(organization)
