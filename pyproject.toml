@@ -17,6 +17,10 @@ dependencies = [
     "psycopg2-binary (>=2.9.11,<3.0.0)",
     "django-redis (>=6.0.0,<7.0.0)",
     "python-dotenv (>=1.2.1,<2.0.0)",
+    "drf-spectacular",
+    "django-filter",
+    "djangorestframework-simplejwt",
+    "pyotp>=2.9.0,<3.0.0",
 ]
 
 
