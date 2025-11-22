@@ -24,7 +24,7 @@ class UserSerializer(serializers.ModelSerializer):
             "email_verified",
             "mfa_enabled",
         ]
-        read_only_fields = fields
+        read_only_fields = ["id", "email", "email_verified", "mfa_enabled"]
 
 
 class OrganizationSummarySerializer(serializers.ModelSerializer):
