@@ -62,12 +62,11 @@ class StandardResultsSetPagination(PageNumberPagination):
             return self.cursor_pagination.get_paginated_response(data)
 
         per_page = self.get_page_size(self.request)
-        meta = OrderedDict(
-            [
-                ("page", self.page.number),
-                ("per_page", per_page),
-                ("total", self.page.paginator.count),
-                ("total_pages", self.page.paginator.num_pages),
-            ]
-        )
-        return Response({"results": data, "_meta": meta})
+        # Match requirements format: { "data": [...], "total": ..., "page": ..., "page_size": ..., "total_pages": ... }
+        return Response({
+            "data": data,
+            "total": self.page.paginator.count,
+            "page": self.page.number,
+            "page_size": per_page,
+            "total_pages": self.page.paginator.num_pages,
+        })

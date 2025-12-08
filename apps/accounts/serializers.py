@@ -37,12 +37,16 @@ class OrganizationSummarySerializer(serializers.ModelSerializer):
 
 
 class RegisterSerializer(serializers.Serializer):
-    first_name = serializers.CharField(max_length=150)
-    last_name = serializers.CharField(max_length=150, allow_blank=True, required=False)
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True, min_length=8)
-    organization_name = serializers.CharField(max_length=255)
-    timezone = serializers.CharField(max_length=64, default="UTC")
+    password_confirm = serializers.CharField(write_only=True, min_length=8)
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150, allow_blank=True, required=False)
+    
+    def validate(self, attrs):
+        if attrs.get("password") != attrs.get("password_confirm"):
+            raise serializers.ValidationError({"password_confirm": "Passwords do not match."})
+        return attrs
 
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
@@ -50,15 +54,16 @@ class RegisterSerializer(serializers.Serializer):
         return value
 
     def create(self, validated_data):
-        org_name = validated_data.pop("organization_name")
-        timezone = validated_data.pop("timezone", "UTC")
+        validated_data.pop("password_confirm")
         password = validated_data.pop("password")
         user = User.objects.create_user(password=password, **validated_data)
 
+        # Create default organization with user's name or email
+        org_name = f"{user.first_name}'s Organization" if user.first_name else f"{user.email}'s Organization"
         organization = org_services.create_organization_with_owner(
             owner=user,
             name=org_name,
-            timezone=timezone,
+            timezone="UTC",
         )
 
         return {"user": user, "organization": organization}
@@ -67,18 +72,15 @@ class RegisterSerializer(serializers.Serializer):
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         data = super().validate(attrs)
-        data["user"] = UserSerializer(self.user).data
-        memberships = OrganizationMember.objects.filter(
-            user=self.user, is_active=True
-        ).select_related("organization", "role")
-        data["memberships"] = [
-            {
-                "organization_id": member.organization_id,
-                "organization_name": member.organization.name,
-                "role": member.role.name if member.role else None,
-            }
-            for member in memberships
-        ]
+        user = self.user
+        data["user"] = {
+            "id": str(user.id),
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "is_active": user.is_active,
+            "created_at": user.date_joined.isoformat() if hasattr(user, 'date_joined') else None,
+        }
         return data
 
 
