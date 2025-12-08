@@ -24,6 +24,8 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+import apps.accounts.views
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
@@ -38,9 +40,11 @@ urlpatterns = [
         name="redoc",
     ),
     path("api/v1/auth/", include("apps.accounts.urls")),
+    path("api/v1/invitations/<str:token>/accept/", apps.accounts.views.AcceptInvitationView.as_view(), name="invitation-accept"),
     path("api/v1/", include("apps.organizations.urls")),
     path("api/v1/", include("apps.subscriptions.urls")),
     path("api/v1/", include("apps.contacts.urls")),
+    path("api/v1/", include("apps.leads.urls")),
     path("api/v1/", include("apps.companies.urls")),
     path("api/v1/", include("apps.opportunities.urls")),
     path("api/v1/", include("apps.tasks.urls")),

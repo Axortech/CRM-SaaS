@@ -20,9 +20,17 @@ from apps.accounts.serializers import (
 )
 from apps.notifications.models import AuditLogEntry, Notification
 from apps.notifications.serializers import AuditLogSerializer, NotificationSerializer
+from apps.organizations.models import Invitation, OrganizationMember
+from apps.organizations.serializers import InvitationAcceptSerializer
 
 
 class RegisterView(APIView):
+    """
+    Register a new user and create their organization.
+    
+    Creates a new user account and automatically creates an organization
+    with the user as the owner. Returns JWT tokens for immediate authentication.
+    """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, *args, **kwargs):
@@ -34,25 +42,37 @@ class RegisterView(APIView):
         verification_token = EmailVerificationToken.objects.create(user=user)
         refresh = RefreshToken.for_user(user)
         payload = {
-            "user": UserSerializer(user).data,
-            "organization": {
-                "id": str(organization.id),
-                "name": organization.name,
-                "slug": organization.slug,
-            },
-            "email_verification_token": verification_token.token,
-            "refresh": str(refresh),
             "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": {
+                "id": str(user.id),
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "is_active": user.is_active,
+                "created_at": user.date_joined.isoformat() if hasattr(user, 'date_joined') else None,
+            }
         }
         return Response(payload, status=status.HTTP_201_CREATED)
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
+    """
+    Login endpoint to obtain JWT access and refresh tokens.
+    
+    Returns access token, refresh token, and user information.
+    """
     serializer_class = CustomTokenObtainPairSerializer
     permission_classes = [permissions.AllowAny]
 
 
 class CurrentUserView(generics.RetrieveUpdateAPIView):
+    """
+    Get or update the current authenticated user's profile.
+    
+    GET: Returns the current user's profile information.
+    PATCH: Updates the current user's profile information.
+    """
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -61,10 +81,16 @@ class CurrentUserView(generics.RetrieveUpdateAPIView):
 
 
 class LogoutView(APIView):
+    """
+    Logout the current user.
+    
+    Invalidates the current session. In a production environment,
+    you may want to blacklist the JWT token here.
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        return Response({"detail": "Logged out successfully."}, status=status.HTTP_200_OK)
+        return Response({"message": "Logged out successfully"}, status=status.HTTP_200_OK)
 
 
 class VerifyEmailView(APIView):
@@ -252,3 +278,108 @@ class UserActivityLogView(APIView):
         logs = AuditLogEntry.objects.filter(user=request.user).order_by("-timestamp")
         serializer = AuditLogSerializer(logs, many=True)
         return Response(serializer.data)
+
+
+class AcceptInvitationView(APIView):
+    """
+    Accept an invitation to join an organization.
+    
+    This is a public endpoint that accepts an invitation token.
+    Can either link to an existing user or create a new user account.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, token, *args, **kwargs):
+        try:
+            invitation = Invitation.objects.select_related("organization", "role").prefetch_related("teams").get(token=token)
+        except Invitation.DoesNotExist:
+            return Response(
+                {"error": "Invalid invitation token."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check if invitation is valid
+        if invitation.status != Invitation.Status.PENDING:
+            return Response(
+                {"error": "Invitation is not pending."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if invitation.is_expired():
+            invitation.status = Invitation.Status.EXPIRED
+            invitation.save(update_fields=["status"])
+            return Response(
+                {"error": "Invitation has expired."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        serializer = InvitationAcceptSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        user_id = serializer.validated_data.get("user_id")
+        password = serializer.validated_data.get("password")
+        first_name = serializer.validated_data.get("first_name")
+        last_name = serializer.validated_data.get("last_name")
+        
+        # Get or create user
+        if user_id:
+            try:
+                user = User.objects.get(id=user_id)
+                if user.email != invitation.email:
+                    return Response(
+                        {"error": "User email does not match invitation email."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except User.DoesNotExist:
+                return Response(
+                    {"error": "User not found."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            # Create new user
+            user = User.objects.create_user(
+                email=invitation.email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name or "",
+            )
+        
+        # Create organization member
+        member, created = OrganizationMember.objects.get_or_create(
+            organization=invitation.organization,
+            user=user,
+            defaults={
+                "role": invitation.role,
+                "invitation_accepted": True,
+            }
+        )
+        
+        if not created:
+            # Update existing member
+            member.role = invitation.role
+            member.invitation_accepted = True
+            member.is_active = True
+            member.save(update_fields=["role", "invitation_accepted", "is_active"])
+        
+        # Add to teams
+        if invitation.teams.exists():
+            member.teams.set(invitation.teams.all())
+        
+        # Mark invitation as accepted
+        invitation.mark_accepted()
+        
+        # Generate tokens
+        refresh = RefreshToken.for_user(user)
+        
+        return Response({
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": {
+                "id": str(user.id),
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "is_active": user.is_active,
+                "created_at": user.date_joined.isoformat() if hasattr(user, 'date_joined') else None,
+            }
+        }, status=status.HTTP_200_OK)

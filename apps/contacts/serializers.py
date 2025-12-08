@@ -8,10 +8,17 @@ User = get_user_model()
 
 
 class TagSerializer(serializers.ModelSerializer):
+    organization_id = serializers.UUIDField(source="organization.id", read_only=True)
+    usage_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Tag
-        fields = ["id", "name", "color", "organization", "created_at", "updated_at"]
-        read_only_fields = ["id", "organization", "created_at", "updated_at"]
+        fields = ["id", "organization_id", "name", "color", "usage_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "organization_id", "usage_count", "created_at", "updated_at"]
+
+    def get_usage_count(self, obj):
+        """Get the number of contacts using this tag"""
+        return obj.contacts.count()
 
 
 class ContactSerializer(serializers.ModelSerializer):
@@ -30,6 +37,9 @@ class ContactSerializer(serializers.ModelSerializer):
         many=True,
         required=False,
     )
+    avatar_url = serializers.SerializerMethodField()
+    assigned_to = serializers.UUIDField(source="owner.id", read_only=True, allow_null=True)
+    assigned_to_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Contact
@@ -46,12 +56,27 @@ class ContactSerializer(serializers.ModelSerializer):
             "stage",
             "source",
             "owner",
+            "assigned_to",
+            "assigned_to_name",
             "tags",
+            "avatar_url",
             "custom_fields",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "organization", "created_at", "updated_at"]
+        read_only_fields = ["id", "organization", "assigned_to", "assigned_to_name", "avatar_url", "created_at", "updated_at"]
+    
+    def get_avatar_url(self, obj):
+        """Get avatar URL from custom_fields"""
+        if obj.custom_fields and "avatar_url" in obj.custom_fields:
+            return obj.custom_fields["avatar_url"]
+        return None
+    
+    def get_assigned_to_name(self, obj):
+        """Get assigned user's name"""
+        if obj.owner:
+            return f"{obj.owner.first_name} {obj.owner.last_name}".strip()
+        return None
 
     def _get_organization(self):
         organization = self.context.get("organization")
@@ -98,8 +123,15 @@ class ContactBulkImportSerializer(serializers.Serializer):
 
 
 class ContactBulkOperationSerializer(serializers.Serializer):
-    ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
-    data = serializers.DictField(child=serializers.CharField(), required=False)
+    contact_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        allow_empty=False,
+        help_text="List of contact IDs"
+    )
+    updates = serializers.DictField(
+        required=False,
+        help_text="Fields to update for all selected contacts"
+    )
 
 
 class ContactMergeSerializer(serializers.Serializer):
